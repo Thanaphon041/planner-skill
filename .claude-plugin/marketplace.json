@@ -1,0 +1,12 @@
+{
+  "name": "planner-skill",
+  "owner": {
+    "name": "Thanaphon"
+  },
+  "plugins": [
+    {
+      "name": "planner",
+      "source": "./"
+    }
+  ]
+}

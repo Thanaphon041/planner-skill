@@ -1,0 +1,26 @@
+{
+  "_comment": "Merge this hooks block with your existing .claude/settings.json",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/planner-remind-phase.sh"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/planner-stop-check.sh"
+          }
+        ]
+      }
+    ]
+  }
+}

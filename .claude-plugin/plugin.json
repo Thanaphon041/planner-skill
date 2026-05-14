@@ -1,0 +1,21 @@
+{
+  "name": "planner",
+  "description": "Phase-based planning workflow — Opus plans a feature into self-contained phases on a dedicated plans branch; Sonnet executes one phase per session. Token + USD cost tracking, auto-fix branch resolution, 8 modes (setup/plan/run/status/list/cleanup/abort/help).",
+  "version": "0.4.0",
+  "author": {
+    "name": "Thanaphon"
+  },
+  "homepage": "https://github.com/Thanaphon041/planner-skill",
+  "repository": "https://github.com/Thanaphon041/planner-skill",
+  "license": "MIT",
+  "keywords": [
+    "planning",
+    "workflow",
+    "phases",
+    "opus",
+    "sonnet",
+    "cost-tracking",
+    "git-worktree"
+  ],
+  "hooks": "./hooks/hooks.json"
+}
