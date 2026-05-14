@@ -10,50 +10,49 @@ Phase-based planning workflow for [Claude Code](https://claude.com/claude-code) 
 
 ## Why?
 
-Real-world features often exceed Claude's context window when you try to plan + implement in one session:
+Real-world features often exceed Claude's 200k context window when you try to plan **and** implement in one session:
 
 ```
-/planner mode (Claude Code default)
+One session, no planner:
   Read 50 files for context  →  150k tokens
   Design + implement         →  250k tokens
-  → Context overflow before phase 2
+  → context overflow / quality rot before phase 2
 ```
 
-This skill splits the work:
+The planner splits the work across sessions:
 
 ```
-/planner <feature>      →  Opus plans   (commits to plans branch, ~$10-30)
-/planner run            →  Sonnet implements phase 01  (~$2-4)
-/planner run            →  Sonnet implements phase 02  (~$2-4)
-...                     →  Each phase = fresh context
-/planner status         →  Read-only progress check
+/planner <feature>   →  Opus plans the whole feature   (~$10-30, one time)
+/planner run         →  Sonnet implements phase 01     (~$2-4, fresh context)
+/planner run         →  Sonnet implements phase 02     (~$2-4, fresh context)
+...                  →  each phase = a clean 200k window
+/planner status      →  read-only progress check
 ```
 
-Costs scale with feature size — small features (2-3 phases) ~$15, large features (5-7 phases) ~$40-60.
+Costs scale with feature size — small features (2-3 phases) ~$15, large features (5-7 phases) ~$40-60. When all phases are done → cleanup prompt (keep or archive) + total cost report.
 
-When all phases done → cleanup prompt (keep or archive) + total cost report.
+> **Note on command syntax:** installed as a plugin, the command is namespaced — you actually type `/planner:planner <args>`. This README writes `/planner <args>` everywhere for readability.
 
 ---
 
-## What does this prevent? (with vs without skill)
+## What does this prevent?
 
-The skill's main value isn't token savings — it's **preventing context rot** and the mistakes that come with it. Sonnet 4.6 has a 200k context window; quality starts degrading well before that limit. Long sessions (80+ turns) on a single feature reliably produce subtle errors.
+The planner's main value isn't token savings — it's **preventing context rot** and the mistakes that come with it. Claude's 200k context window degrades in quality well before the hard limit; long sessions (80+ turns) on a single feature reliably produce subtle errors.
 
 ### 🐛 Failure modes — frequency comparison
 
-| Failure mode | Without skill | With skill | What prevents it |
+| Failure mode | Without planner | With planner | What prevents it |
 |---|---|---|---|
-| Architecture rule violated (e.g. DTO leaks into UI) | ~30% phases | ~5% | Init skill reloads rules each phase |
+| Architecture rule violated (e.g. layering break) | ~30% phases | ~5% | Init skill reloads project rules each phase |
 | Claims "tests pass" without actually running | ~40% phases | ~10% | Acceptance criteria explicit in phase file |
-| Edits files outside phase scope (scope creep) | ~50% turns | ~10% | PreToolUse hook re-injects scope |
+| Edits files outside phase scope (scope creep) | ~50% turns | ~10% | PreToolUse hook re-injects scope before edits |
 | Forgets earlier decisions, re-asks architecture | ~60% sessions | ~5% | Decisions Log in `_overview.md` |
-| Uses stale API after refactor | ~30% turns | ~10% | Fresh `/clear` per phase + new init |
+| Uses stale API after a refactor | ~30% turns | ~10% | Fresh `/clear` per phase + re-load context |
 | Hallucinates non-existent file paths | ~20% | ~5% | Phase file lists real paths (verified at plan time) |
-| Forgets to commit / push | ~35% phases | ~5% | E10 enforces 2-commit workflow |
-| Commits to wrong branch (e.g. develop instead of feature/x) | ~25% | ~0% | E3 auto-resolves branch |
-| Leaves TODO / placeholder in code | ~30% phases | ~10% | Acceptance criteria checkbox |
-| Skips build check (`gradle checkRules` etc.) | ~50% phases | ~15% | Acceptance + stop hook |
-| Hardcodes UI strings instead of using Contract.Text | ~40% | ~10% | Init skill loads UI rules |
+| Forgets to commit / push | ~35% phases | ~5% | 2-commit-push workflow, enforced by Stop hook |
+| Commits to wrong branch | ~25% | ~0% | Branch resolution (E3) auto-fixes |
+| Leaves TODO / placeholder in code | ~30% phases | ~10% | Acceptance criteria checkboxes |
+| Skips the build/test check | ~50% phases | ~15% | Acceptance criteria + Stop hook |
 | Status update doesn't match actual work done | N/A | ~5% | Stop hook blocks if tasks not ticked |
 
 > Numbers are estimates from observed patterns, not benchmarked. Real rates depend heavily on feature complexity and codebase size.
@@ -64,7 +63,7 @@ The skill's main value isn't token savings — it's **preventing context rot** a
 |---|---|---|---|
 | Avg context per turn | 110-180k | 50-100k | **-45%** |
 | Quality consistency on long tasks | 50-60% | 90-95% | **+50%** |
-| Repeat-work rate (rework after mistake) | 30-40% of turns | 5-10% | **-75%** |
+| Repeat-work rate (rework after a mistake) | 30-40% of turns | 5-10% | **-75%** |
 | Token cost vs disciplined manual workflow | baseline | -10-15% | small saving |
 | Token cost vs naive Opus 1-session | baseline | -70% | large saving |
 | Total time on large features | baseline | -20-30% | faster |
@@ -78,19 +77,17 @@ The skill's main value isn't token savings — it's **preventing context rot** a
 |---|---|
 | Feature spanning 4+ phases / multiple modules | 🟢 **Use it** — net +30-50% productivity, lower mistake rate |
 | Feature 2-3 phases | 🟡 Use if you value structure — net 0 to +15% |
-| Small fix / single-file change | 🔴 **Don't use** — overhead not worth it (~-15%) |
+| Small fix / single-file change | 🔴 **Don't use** — planning overhead isn't worth it |
 
-### 🧠 Why the skill helps
+### 🧠 Why it helps
 
 Three mechanisms acting independently:
 
-1. **Context refresh between phases** — `/clear` resets baseline to ~50k. Phase 5 runs as fresh as phase 1, instead of dragging accumulated context.
+1. **Context refresh between phases** — `/clear` resets the baseline to ~50k. Phase 5 runs as fresh as phase 1, instead of dragging accumulated context.
+2. **Hooks act as bouncers** — the PreToolUse hook re-injects the current phase's scope before every edit (combats "lost in the middle"); the Stop hook blocks if the 2-commit-push workflow is incomplete.
+3. **Phase file is the single source of truth** — `Files to read`, `Files to modify`, `Tasks`, `Acceptance criteria` are explicit. No exploration, no guessing, no re-asking.
 
-2. **Hooks act as bouncers** — PreToolUse re-injects current phase scope before every edit (combats "lost in middle"). Stop hook blocks if the 2-commit workflow is incomplete.
-
-3. **Phase file is single source of truth** — `Files to read`, `Files to modify`, `Tasks`, `Acceptance criteria` are explicit. No exploration, no guessing, no re-asking.
-
-### ⚠️ What the skill does NOT prevent
+### ⚠️ What it does NOT prevent
 
 - Logic bugs in code
 - Edge cases your tests don't cover
@@ -129,7 +126,7 @@ That's it — the slash command and both hooks (phase reminder + 2-commit-push e
 
 Update later with `/plugin marketplace update` then `/plugin update planner@planner-skill`.
 
-> Commands are namespaced under the plugin: invoke with **`/planner:planner`** (plugin `planner`, command `planner`). `$ARGUMENTS` routes the mode — e.g. `/planner:planner run`, `/planner:planner status`.
+The command is `/planner:planner` (plugin `planner`, command `planner`); the mode is passed as an argument — `/planner:planner run`, `/planner:planner status`, etc.
 
 ### Alternative — `install.sh` (non-plugin)
 
@@ -145,10 +142,10 @@ The installer asks 2 questions (init skill name, test command), copies `commands
 ### After install — one-time per machine
 
 ```
-/planner:planner setup
+/planner setup
 ```
 
-This bootstraps the orphan `plans` branch + `_plans` worktree, and **asks 1 question:**
+Bootstraps the orphan `plans` branch + `_plans` worktree, and **asks 1 question:**
 - **Base branch** (e.g. `develop`, `main`) — which branch new feature plans should fork from
 
 It persists in `.claude/worktrees/_plans/.planner-config.sh` on the plans branch, so teammates inherit the same config when they run setup.
@@ -158,16 +155,14 @@ It persists in `.claude/worktrees/_plans/.planner-config.sh` on the plans branch
 ### Use it
 
 ```
-/planner:planner <feature description>     ← Opus plans
-/planner:planner run                       ← Sonnet executes one phase
-/planner:planner status [<slug>]           ← read-only progress for one plan
-/planner:planner list                      ← all plans (active + archived)
-/planner:planner cleanup <slug>            ← archive completed plan
-/planner:planner abort <slug> [<reason>]   ← mark plan abandoned
-/planner:planner help                      ← mode reference + paths
+/planner <feature description>     ← Opus plans
+/planner run                       ← Sonnet executes one phase
+/planner status [<slug>]           ← read-only progress for one plan
+/planner list                      ← all plans (active + archived)
+/planner cleanup <slug>            ← archive completed plan
+/planner abort <slug> [<reason>]   ← mark plan abandoned
+/planner help                      ← mode reference + paths
 ```
-
-> The examples below write `/planner <...>` for brevity — with the plugin install, the actual invocation is `/planner:planner <...>`.
 
 ---
 
@@ -180,9 +175,10 @@ It persists in `.claude/worktrees/_plans/.planner-config.sh` on the plans branch
    Plans worktree: /Users/you/projects/my-app/.claude/worktrees/_plans
    Branch:         plans (orphan)
    Remote:         origin/plans (synced)
+   Base branch:    develop
    Init skill:     planner-init
 
-Next: ใช้ /planner <feature> เพื่อสร้าง plan แรก
+Next: use /planner <feature> to create your first plan
 ```
 
 If your project has no init skill, the fallback `planner-init` is auto-installed at `.claude/commands/planner-init.md`.
@@ -263,7 +259,23 @@ After this output, Opus **HARD STOPs** to prevent accidentally implementing phas
 
 ### `/planner run` — Sonnet executes one phase
 
-After each phase, hand-off summary shows per-phase cost + cumulative spent + projected total. (See [last phase example](#last-phase-complete--cleanup-prompt) below for the same shape applied at completion.)
+Sonnet reads the phase file, implements the tasks, runs the acceptance checks, commits + pushes both branches, then hands off:
+
+```
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+✅  PHASE 02 DONE — Composer mention detection + state
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Tasks      6/6 ✅      Acceptance  3/3 ✅
+  Code       a1b2c3d  pushed → feature/mention-in-group
+  Status     e4f5g6h  pushed → plans
+
+  This phase   ~7.2M  · $3.61   (est was $3.30)
+  Cumulative   ~16.4M · $31.67  (Plan + phase 01-02)
+  Remaining    3 phases · est ~$5.70
+
+  Next: /clear → /planner run   (phase 03 — ViewModel ↔ Composer wiring)
+```
 
 ---
 
@@ -363,11 +375,9 @@ Reply `k` → plan files preserved. Reply `d` → cleanup commit, recover anytim
 
 ---
 
-## Customization Reference
+## Configuration & Adaptations
 
-### Required adaptations
-
-#### 1. Base branch
+#### 1. Base branch — automatic
 
 Asked interactively by `/planner setup` — no manual editing needed. Whatever you answer (e.g. `develop`, `main`, `master`) is persisted to `.claude/worktrees/_plans/.planner-config.sh` on the plans branch and sourced by every mode.
 
@@ -405,11 +415,11 @@ In the phase template, replace examples like:
 
 ## How it works (deep dive)
 
-### Branch resolution + 2-commit workflow
+### Branch resolution + 2-commit-push workflow
 
-`/planner run` auto-resolves the branch (5 cases: already on it, on another worktree, ephemeral, has uncommitted work, or missing). Each phase produces 2 commits — code → feature branch, status → plans branch. Stop hook blocks if tasks ticked but overview not updated.
+`/planner run` auto-resolves the branch (5 cases: already on it, on another worktree, ephemeral, has uncommitted work, or missing). Each phase produces 2 commits — code → feature branch, status → plans branch — and **pushes both**. The Stop hook blocks the session from ending if the phase's tasks are ticked but the code commit isn't pushed, or the plans branch isn't updated.
 
-Detailed rules: see `planner.md` § E3 (branch resolution) + § E10 (two-commit).
+Detailed rules: see `commands/planner.md` § E3 (branch resolution) + § E10 (two-commit-push).
 
 ### Cost tracking
 
@@ -467,8 +477,8 @@ A: Yes — core mechanics (git worktrees, JSONL parsing, hooks) are language-agn
 **Q: Can I use this for non-Claude-Code projects?**
 A: The skill is Claude Code specific (depends on JSONL format, slash command system, hooks). Concept is portable but implementation needs adaptation.
 
-**Q: What if my team uses `main` as base branch?**
-A: Replace `<base-branch>` placeholder in `planner.md` with `main`.
+**Q: What if my team uses `main` (or `master`, `release/*`) as the base branch?**
+A: `/planner setup` asks you which branch to fork from and persists it. Nothing to edit manually.
 
 **Q: Why orphan branch instead of just `docs/plans/` in develop?**
 A: Plans on develop pollute history (`fix(planner): ...` commits) and CI runs (no need to test plan changes). Orphan branch keeps plans separate, parallel to code timeline. Feature branches stay 100% code.
