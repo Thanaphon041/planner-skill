@@ -4,7 +4,58 @@ Phase-based planning workflow for [Claude Code](https://claude.com/claude-code) 
 
 **Core idea:** A high-context model (Opus) plans the work into self-contained phases stored in a dedicated git branch; a fresh-context model (Sonnet) executes one phase per session. Project context, tokens, and dollar costs tracked across the whole feature lifecycle.
 
-**Install:** `claude plugin marketplace add Thanaphon041/planner-skill` then `claude plugin install planner@planner-skill` — [details below](#install).
+---
+
+## Install
+
+### Recommended — Claude Code plugin
+
+```bash
+claude plugin marketplace add Thanaphon041/planner-skill
+claude plugin install planner@planner-skill
+```
+
+That's it — the slash command and both hooks (phase reminder + 2-commit-push enforcement) are wired automatically. No `install.sh`, no manual `settings.json` editing.
+
+Update later with `/plugin marketplace update` then `/plugin update planner@planner-skill`.
+
+The command is `/planner:planner` (plugin `planner`, command `planner`); the mode is passed as an argument — `/planner:planner run`, `/planner:planner status`, etc.
+
+### Alternative — `install.sh` (non-plugin)
+
+For projects that can't use plugins, or to vendor the skill directly into `.claude/`:
+
+```bash
+gh api /repos/Thanaphon041/planner-skill/contents/install.sh --jq .content \
+  | base64 -d | bash -s -- ~/projects/my-app
+```
+
+The installer asks 2 questions (init skill name, test command), copies `commands/planner.md` → `.claude/commands/`, copies hooks, and prints the manual steps to wire hooks in `settings.json`. See [FAQ](#faq) for local-clone / public-fork variants.
+
+### After install — one-time per machine
+
+```
+/planner setup
+```
+
+Bootstraps the orphan `plans` branch + `_plans` worktree, and **asks 1 question:**
+- **Base branch** (e.g. `develop`, `main`) — which branch new feature plans should fork from
+
+It persists in `.claude/worktrees/_plans/.planner-config.sh` on the plans branch, so teammates inherit the same config when they run setup.
+
+> **Note on language:** Claude already mirrors your prompt language naturally — type in Thai, get Thai responses; type in English, get English. No config needed. Artifacts (commit messages, code, plan files, branch names) always stay in English so git history works for international teams.
+
+### Use it
+
+```
+/planner <feature description>     ← Opus plans
+/planner run                       ← Sonnet executes one phase
+/planner status [<slug>]           ← read-only progress for one plan
+/planner list                      ← all plans (active + archived)
+/planner cleanup <slug>            ← archive completed plan
+/planner abort <slug> [<reason>]   ← mark plan abandoned
+/planner help                      ← mode reference + paths
+```
 
 ---
 
@@ -110,59 +161,6 @@ These still require code review.
 - **Cleanup prompt on completion** — when all phases ✅, asks user to keep or archive plan files.
 - **Self-healing init skill** — auto-installs fallback project-context loader if missing.
 - **Hooks** — phase reminder injected before code edits, stop hook blocks if 2-commit workflow incomplete.
-
----
-
-## Install
-
-### Recommended — Claude Code plugin
-
-```bash
-claude plugin marketplace add Thanaphon041/planner-skill
-claude plugin install planner@planner-skill
-```
-
-That's it — the slash command and both hooks (phase reminder + 2-commit-push enforcement) are wired automatically. No `install.sh`, no manual `settings.json` editing.
-
-Update later with `/plugin marketplace update` then `/plugin update planner@planner-skill`.
-
-The command is `/planner:planner` (plugin `planner`, command `planner`); the mode is passed as an argument — `/planner:planner run`, `/planner:planner status`, etc.
-
-### Alternative — `install.sh` (non-plugin)
-
-For projects that can't use plugins, or to vendor the skill directly into `.claude/`:
-
-```bash
-gh api /repos/Thanaphon041/planner-skill/contents/install.sh --jq .content \
-  | base64 -d | bash -s -- ~/projects/my-app
-```
-
-The installer asks 2 questions (init skill name, test command), copies `commands/planner.md` → `.claude/commands/`, copies hooks, and prints the manual steps to wire hooks in `settings.json`. See [FAQ](#faq) for local-clone / public-fork variants.
-
-### After install — one-time per machine
-
-```
-/planner setup
-```
-
-Bootstraps the orphan `plans` branch + `_plans` worktree, and **asks 1 question:**
-- **Base branch** (e.g. `develop`, `main`) — which branch new feature plans should fork from
-
-It persists in `.claude/worktrees/_plans/.planner-config.sh` on the plans branch, so teammates inherit the same config when they run setup.
-
-> **Note on language:** Claude already mirrors your prompt language naturally — type in Thai, get Thai responses; type in English, get English. No config needed. Artifacts (commit messages, code, plan files, branch names) always stay in English so git history works for international teams.
-
-### Use it
-
-```
-/planner <feature description>     ← Opus plans
-/planner run                       ← Sonnet executes one phase
-/planner status [<slug>]           ← read-only progress for one plan
-/planner list                      ← all plans (active + archived)
-/planner cleanup <slug>            ← archive completed plan
-/planner abort <slug> [<reason>]   ← mark plan abandoned
-/planner help                      ← mode reference + paths
-```
 
 ---
 
